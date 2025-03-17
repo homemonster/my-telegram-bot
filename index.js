@@ -15,7 +15,7 @@ const bot = new TelegramBot(token, {polling: true});
 
 // Создание пула соединений с базой данных
 const pool = mysql.createPool({
-    host: "127.0.0.1",
+    host: process.env.DB_HOST,
     user: "user",
     port: 3306,
     database: "mydatabase",
