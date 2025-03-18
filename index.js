@@ -1,10 +1,15 @@
 const TelegramBot = require('node-telegram-bot-api');
 const mysql = require('mysql2/promise'); // Используем mysql2 с поддержкой промисов
-
+const initAIHelper = require('./aihelper');
 // проверка git
 
-const token = '7764735519:AAG51JzX6eVvX81uL1LxQ-V0a1NsNKohlMA';
+const token = TELEGRAM_BOT_TOKEN;
 const bot = new TelegramBot(token, {polling: true});
+
+// после оплаты API :) раскоментим
+//const aiHelper = initAIHelper(bot);
+//aiHelper.setupGroupHandler(); // Активируем обработчик группы
+
 
 // Создание пула соединений с базой данных
 const pool = mysql.createPool({
