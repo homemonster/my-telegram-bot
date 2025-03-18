@@ -1,6 +1,8 @@
 const TelegramBot = require('node-telegram-bot-api');
 const mysql = require('mysql2/promise'); // Используем mysql2 с поддержкой промисов
 
+// проверка git
+
 const token = '7764735519:AAG51JzX6eVvX81uL1LxQ-V0a1NsNKohlMA';
 const bot = new TelegramBot(token, {polling: true});
 
