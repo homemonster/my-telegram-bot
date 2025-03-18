@@ -1,0 +1,79 @@
+const TelegramBot = require('node-telegram-bot-api');
+const token = '7764735519:AAG51JzX6eVvX81uL1LxQ-V0a1NsNKohlMA';
+const bot = new TelegramBot(token, {polling: true});
+
+const start = () => {
+    const mysql = require('mysql');
+    const conn = mysql.createConnection({
+        host: "127.0.0.1",
+        user: "user",
+	port: 3306,
+        database: "mydatabase",
+        password: "user"
+    });
+
+   // Настройка подключения к базе данных
+ conn.connect((err) => {
+	if (err) {
+	console.error('Ошибка подключения к базе данных:', err.stack);
+ 	return;
+	}
+        console.log('Подключение к базе данных успешно установлено');});
+
+// Объект для хранения состояния пользователя
+        let userState = {};
+// Команда старта
+bot.onText(/\/start/, (msg) => {
+	const chatId = msg.chat.id;
+	bot.sendMessage(chatId, "Привет! Давай познакомимся. Как тебя зовут?");
+	userState[chatId] = {step: 'first_name'};
+   });
+   // Обработка сообщений
+   bot.on('message', async (msg) => { 
+	const chatId = msg.chat.id; 
+	const text = msg.text; 
+	if (!userState[chatId]) {
+           userState[chatId] = {step: 'first_name'};
+       }
+       switch (userState[chatId].step) { 
+	case 'first_name': userState[chatId].first_name = text;
+               userState[chatId].step = 'last_name';
+	       bot.sendMessage(chatId, "Какая у тебя фамилия?"); break;
+        case 'last_name': userState[chatId].last_name = text; userState[chatId].step = 'age'; 
+               bot.sendMessage(chatId, "Сколько тебе лет?"); break;
+        case 'age': userState[chatId].age = text; userState[chatId].step = 'department'; 
+               bot.sendMessage(chatId, "В каком подразделении ты работаешь?"); break;
+        case 'department': userState[chatId].department = text;
+               // Запись данных в базу данных
+               try {await conn.query("INSERT INTO users (chat_id, first_name, last_name, age, department) VALUES (?, ?, ?, ?, ?)", [chatId, userState[chatId].first_name, userState[chatId].last_name, 
+                       userState[chatId].age, userState[chatId].department]);
+                   conn.release(); 
+		   bot.sendMessage(chatId, `Спасибо, ${userState[chatId].first_name}! Твои данные сохранены.`);
+               } catch (err) {
+                   console.error(err); 
+		   bot.sendMessage(chatId, "Произошла ошибка при сохранении данных.");
+               }
+               delete userState[chatId]; break;
+       }
+   });
+   // Команда для забытия пользователя
+   bot.onText(/\/forgetme/, async (msg) => { const chatId = msg.chat.id; try { const conn = await 
+           pool.getConnection(); await conn.query("DELETE FROM users WHERE chat_id = ?", 
+           [chatId]); conn.release(); bot.sendMessage(chatId, "Твои данные удалены. Нажми /start 
+           для повторной авторизации.");
+       } catch (err) {
+           console.error(err); bot.sendMessage(chatId, "Произошла ошибка при удалении данных.");
+       }
+   });
+   // Приветствие пользователя по имени
+   bot.onText(/\/hello/, async (msg) => { const chatId = msg.chat.id; try { const conn = await 
+           pool.getConnection(); const rows = await conn.query("SELECT first_name FROM users WHERE 
+           chat_id = ?", [chatId]); conn.release(); if (rows.length > 0) {
+               bot.sendMessage(chatId, `Привет, ${rows[0].first_name}!`);
+           } else {
+               bot.sendMessage(chatId, "Я тебя не знаю. Нажми /start для авторизации.");
+           }
+       } catch (err) {
+           console.error(err); bot.sendMessage(chatId, "Произошла ошибка при получении данных.");
+       }
+   });
