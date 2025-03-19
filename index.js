@@ -3,7 +3,7 @@ const mysql = require('mysql2/promise'); // Используем mysql2 с по�
 const initAIHelper = require('./aihelper');
 // проверка git
 
-const token = TELEGRAM_BOT_TOKEN;
+const token = "7764735519:AAG51JzX6eVvX81uL1LxQ-V0a1NsNKohlMA";
 const bot = new TelegramBot(token, {polling: true});
 
 // после оплаты API :) раскоментим
