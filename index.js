@@ -42,14 +42,14 @@ bot.onText(/\/start/, async (msg) => {
             const options = {
                 reply_markup: {
                     inline_keyboard: [
-                        [{ text: "Забыть меня", callback_data: "forget_me" }]
+                        [{ text: "Удалить данные", callback_data: "forget_me" }]
                     ]
                 }
             };
-            bot.sendMessage(chatId, `Привет, ${rows[0].first_name}! Ты уже зарегистрирован. Хочешь удалить свои данные?`, options);
+            bot.sendMessage(chatId, `Привет, ${rows[0].first_name}! Вы уже зарегистрированы. Удалить данные?`, options);
         } else {
             // Если пользователя нет, начинаем регистрацию
-            bot.sendMessage(chatId, "Привет! Давай познакомимся. Как тебя зовут?");
+            bot.sendMessage(chatId, "Здравствуйте! Давайте познакомимся. Как Ваше имя?");
             userState[chatId] = {step: 'first_name'};
         }
     } catch (err) {
@@ -68,7 +68,9 @@ bot.on('callback_query', async (callbackQuery) => {
             const conn = await pool.getConnection();
             await conn.query("DELETE FROM users WHERE chat_id = ?", [chatId]);
             conn.release();
-            bot.sendMessage(chatId, "Твои данные удалены. Нажми /start для повторной авторизации.");
+            // Убираем кнопку "Забыть меня" после нажатия
+            bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: callbackQuery.message.message_id });
+            bot.sendMessage(chatId, "Ваши данные удалены. Нажмите /start для повторной авторизации.");
             delete userState[chatId]; // Удаляем состояние пользователя
         } catch (err) {
             console.error(err);
@@ -96,13 +98,13 @@ bot.on('message', async (msg) => {
         case 'first_name':
             userState[chatId].first_name = text;
             userState[chatId].step = 'last_name';
-            bot.sendMessage(chatId, "Какая у тебя фамилия?");
+            bot.sendMessage(chatId, "Какая у Вас фамилия?");
             break;
 
         case 'last_name':
             userState[chatId].last_name = text;
             userState[chatId].step = 'age';
-            bot.sendMessage(chatId, "Сколько тебе лет?");
+            bot.sendMessage(chatId, "Сколько Вам лет?");
             break;
 
         case 'age':
@@ -112,7 +114,7 @@ bot.on('message', async (msg) => {
             }
             userState[chatId].age = text;
             userState[chatId].step = 'department';
-            bot.sendMessage(chatId, "В каком подразделении ты работаешь?");
+            bot.sendMessage(chatId, "В каком подразделении Вы работаете?");
             break;
 
         case 'department':
@@ -126,7 +128,7 @@ bot.on('message', async (msg) => {
                     [chatId, userState[chatId].first_name, userState[chatId].last_name, userState[chatId].age, userState[chatId].department]
                 );
                 conn.release(); // Возвращаем соединение в пул
-                bot.sendMessage(chatId, `Спасибо, ${userState[chatId].first_name}! Твои данные сохранены.`);
+                bot.sendMessage(chatId, `Спасибо, ${userState[chatId].first_name}! Ваши данные сохранены.`);
             } catch (err) {
                 console.error(err);
                 bot.sendMessage(chatId, "Произошла ошибка при сохранении данных.");
@@ -144,9 +146,9 @@ bot.onText(/\/hello/, async (msg) => {
         const [rows] = await conn.query("SELECT first_name FROM users WHERE chat_id = ?", [chatId]);
         conn.release(); // Возвращаем соединение в пул
         if (rows.length > 0) {
-            bot.sendMessage(chatId, `Привет, ${rows[0].first_name}!`);
+            bot.sendMessage(chatId, `Здравствуйте, ${rows[0].first_name}!`);
         } else {
-            bot.sendMessage(chatId, "Я тебя не знаю. Нажми /start для авторизации.");
+            bot.sendMessage(chatId, "Я Вас не знаю. Нажмите /start для авторизации.");
         }
     } catch (err) {
         console.error(err);
