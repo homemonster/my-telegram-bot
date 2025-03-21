@@ -46,11 +46,12 @@ bot.onText(/\/start/, async (msg) => {
                     ]
                 }
             };
-            bot.sendMessage(chatId, `Привет, ${rows[0].first_name}! Вы уже зарегистрированы. Удалить данные?`, options);
+            const sentMessage = await bot.sendMessage(chatId, `Привет, ${rows[0].first_name}! Вы уже зарегистрированы. Удалить данные?`, options);
+            userState[chatId] = { buttonMessageId: sentMessage.message_id }; // Сохраняем ID сообщения с кнопкой
         } else {
             // Если пользователя нет, начинаем регистрацию
             bot.sendMessage(chatId, "Здравствуйте! Давайте познакомимся. Как Ваше имя?");
-            userState[chatId] = {step: 'first_name'};
+            userState[chatId] = { step: 'first_name' };
         }
     } catch (err) {
         console.error(err);
@@ -69,7 +70,7 @@ bot.on('callback_query', async (callbackQuery) => {
             await conn.query("DELETE FROM users WHERE chat_id = ?", [chatId]);
             conn.release();
             // Убираем кнопку "Забыть меня" после нажатия
-            bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: callbackQuery.message.message_id });
+            await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: callbackQuery.message.message_id });
             bot.sendMessage(chatId, "Ваши данные удалены. Нажмите /start для повторной авторизации.");
             delete userState[chatId]; // Удаляем состояние пользователя
         } catch (err) {
@@ -84,14 +85,19 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    // Игнорируем сообщения, если состояние пользователя не установлено и удаляем кнопку
-    if (!userState[chatId] && msg.reply_markup) {
-        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id - 1 });
-        return;
+    // Если есть состояние пользователя и сохранённое сообщение с кнопкой, удаляем кнопку
+    if (userState[chatId]?.buttonMessageId) {
+        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: userState[chatId].buttonMessageId });
+        delete userState[chatId].buttonMessageId; // Удаляем ID сообщения с кнопкой
     }
 
     // Игнорируем команды (начинающиеся с /)
     if (text.startsWith('/')) {
+        return;
+    }
+
+    // Если состояние пользователя не установлено, выходим
+    if (!userState[chatId]) {
         return;
     }
 
@@ -122,19 +128,18 @@ bot.on('message', async (msg) => {
             userState[chatId].department = text;
             try {
                 const conn = await pool.getConnection();
-                // Используем INSERT ... ON DUPLICATE KEY UPDATE для обновления данных, если пользователь уже существует
                 await conn.query(
                     "INSERT INTO users (chat_id, first_name, last_name, age, department) VALUES (?, ?, ?, ?, ?) " +
                     "ON DUPLICATE KEY UPDATE first_name = VALUES(first_name), last_name = VALUES(last_name), age = VALUES(age), department = VALUES(department)",
                     [chatId, userState[chatId].first_name, userState[chatId].last_name, userState[chatId].age, userState[chatId].department]
                 );
-                conn.release(); // Возвращаем соединение в пул
+                conn.release();
                 bot.sendMessage(chatId, `Спасибо, ${userState[chatId].first_name}! Ваши данные сохранены.`);
             } catch (err) {
                 console.error(err);
                 bot.sendMessage(chatId, "Произошла ошибка при сохранении данных.");
             }
-            delete userState[chatId]; // Удаляем состояние пользователя
+            delete userState[chatId];
             break;
     }
 });
