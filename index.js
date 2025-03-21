@@ -84,8 +84,9 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
 
-    // Игнорируем сообщения, если состояние пользователя не установлено
-    if (!userState[chatId]) {
+    // Игнорируем сообщения, если состояние пользователя не установлено и удаляем кнопку
+    if (!userState[chatId] && msg.reply_markup) {
+        await bot.editMessageReplyMarkup({ inline_keyboard: [] }, { chat_id: chatId, message_id: msg.message_id - 1 });
         return;
     }
 
