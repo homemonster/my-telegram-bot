@@ -50,25 +50,25 @@ const registrationModule = {
     handleMessage: async (msg) => {
         const chatId = msg.chat.id;
         const text = msg.text.trim();
-
+    
         if (!userState[chatId]?.step) return false;
-
+    
         try {
             switch (userState[chatId].step) {
                 case 'first_name':
-                    await this.handleFirstName(chatId, text);
+                    await registrationModule.handleFirstName(chatId, text);
                     return true;
                 
                 case 'last_name':
-                    await this.handleLastName(chatId, text);
+                    await registrationModule.handleLastName(chatId, text);
                     return true;
                 
                 case 'age':
-                    await this.handleAge(chatId, text);
+                    await registrationModule.handleAge(chatId, text);
                     return true;
                 
                 case 'department':
-                    await this.handleDepartment(chatId, text);
+                    await registrationModule.handleDepartment(chatId, text);
                     return true;
             }
         } catch (err) {
@@ -123,8 +123,16 @@ const registrationModule = {
 // 2. Модуль работы с шагами
 const stepsModule = {
     startAdd: async (chatId) => {
-        userState[chatId] = { step: 'steps_date' };
-        await bot.sendMessage(chatId, "Введите дату в формате ГГГГ-ММ-ДД:");
+        const buttons = [
+            [{ text: "2025-07-19", callback_data: "steps_date_2025-07-19" }],
+            [{ text: "2025-07-20", callback_data: "steps_date_2025-07-20" }],
+            [{ text: "2025-07-21", callback_data: "steps_date_2025-07-21" }],
+            [{ text: "❌ Отмена", callback_data: "steps_cancel" }]
+        ];
+
+        await bot.sendMessage(chatId, "📅 Выберите дату для добавления данных:", {
+            reply_markup: { inline_keyboard: buttons }
+        });
     },
 
     startReport: async (chatId) => {
@@ -159,21 +167,20 @@ const stepsModule = {
     handleMessage: async (msg) => {
         const chatId = msg.chat.id;
         const text = msg.text.trim();
-
-        if (!userState[chatId]?.step?.startsWith('steps_')) return false;
-
+    
+        // Проверяем наличие шага и что он относится к модулю шагов
+        if (!userState[chatId] || !['steps_count', 'meters_count'].includes(userState[chatId].step)) {
+            return false;
+        }
+    
         try {
             switch (userState[chatId].step) {
-                case 'steps_date':
-                    await this.handleDate(chatId, text);
-                    return true;
-                
                 case 'steps_count':
-                    await this.handleSteps(chatId, text);
+                    await stepsModule.handleSteps(chatId, text);
                     return true;
                 
                 case 'meters_count':
-                    await this.handleMeters(chatId, text);
+                    await stepsModule.handleMeters(chatId, text);
                     return true;
             }
         } catch (err) {
@@ -317,14 +324,24 @@ bot.on('message', async (msg) => {
 bot.on('callback_query', async (callbackQuery) => {
     const chatId = callbackQuery.message.chat.id;
     const data = callbackQuery.data;
+    let conn; // Объявляем conn здесь, чтобы она была доступна в finally
 
     try {
-        if (data === 'forget_me') {
-            const conn = await pool.getConnection();
+        if (data.startsWith('steps_date_')) {
+            const date = data.replace('steps_date_', '');
+            await bot.deleteMessage(chatId, callbackQuery.message.message_id);
+            userState[chatId] = { date, step: 'steps_count' };
+            await bot.sendMessage(chatId, `Выбрана дата: ${date}\nСколько шагов вы прошли?`);
+        }
+        else if (data === 'steps_cancel') {
+            await bot.deleteMessage(chatId, callbackQuery.message.message_id);
+            delete userState[chatId];
+        }
+        else if (data === 'forget_me') {
+            conn = await pool.getConnection();
             await conn.query("DELETE FROM users WHERE chat_id = ?", [chatId]);
             await conn.query("DELETE FROM steps WHERE chat_id = ?", [chatId]);
-            conn.release();
-
+            
             await bot.editMessageReplyMarkup(
                 { inline_keyboard: [] },
                 { 
@@ -340,12 +357,11 @@ bot.on('callback_query', async (callbackQuery) => {
         }
         else if (data.startsWith('report_')) {
             const date = data.replace('report_', '');
-            const conn = await pool.getConnection();
+            conn = await pool.getConnection();
             const [rows] = await conn.query(
                 "SELECT steps, meters FROM steps WHERE chat_id = ? AND DATE(date) = ?",
                 [chatId, date]
             );
-            conn.release();
 
             await bot.deleteMessage(chatId, callbackQuery.message.message_id);
 
@@ -361,6 +377,8 @@ bot.on('callback_query', async (callbackQuery) => {
     } catch (err) {
         console.error('Ошибка callback:', err);
         await bot.sendMessage(chatId, "⚠️ Ошибка обработки запроса.");
+    } finally {
+        if (conn) await conn.release(); // Освобождаем соединение, если оно было создано
     }
 });
 
