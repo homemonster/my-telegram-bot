@@ -1,21 +1,22 @@
-require('dotenv').config();
+require('dotenv').config(); // загружаем переменные из .env
 const TelegramBot = require('node-telegram-bot-api');
 const mysql = require('mysql2/promise');
 
 // Конфигурация
 const config = {
-    token: "7764735519:AAG51JzX6eVvX81uL1LxQ-V0a1NsNKohlMA",
+    token: process.env.BOT_TOKEN, 
     db: {
-        host: process.env.DB_HOST,
-        user: "user",
-        port: 3306,
-        database: "mydatabase",
-        password: "user",
+        host: process.env.DB_HOST,                  
+        user: process.env.DB_USER,                 
+        password: process.env.DB_PASSWORD,          
+        database: process.env.DB_NAME,              
+        port: parseInt(process.env.DB_PORT) || 3306,
         waitForConnections: true,
         connectionLimit: 10,
         queueLimit: 0
     }
 };
+
 
 // Инициализация бота
 const bot = new TelegramBot(config.token, {polling: true});
