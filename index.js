@@ -108,50 +108,73 @@ const registrationModule = {
             // Подтверждаем нажатие кнопки
             await bot.answerCallbackQuery(callbackQuery.id);
 
-    // Добавьте этот блок ПЕРЕД условием if (data.startsWith('age_')...:
-if (data.startsWith('status_')) {
-    const status = data.split('_')[1];
-    const chatId = callbackQuery.message.chat.id;
-    
-    if (!userState[chatId]) {
-        userState[chatId] = {};
-    }
-    
-    userState[chatId].status = status;
-    userState[chatId].step = 'age';
-
-    const ageButtons = [
-        [{ text: "18-33 года", callback_data: "age_18-33" }],
-        [{ text: "34-44 года", callback_data: "age_34-44" }],
-        [{ text: "45-54 года", callback_data: "age_45-54" }],
-        [{ text: "55+ лет", callback_data: "age_55+" }]
-    ];
-
-    if (status === 'family') {
-        ageButtons.unshift([{ text: "1-17 лет", callback_data: "age_1-17" }]);
-    }
-
-    await bot.editMessageReplyMarkup(
-        { inline_keyboard: [] },
-        { 
-            chat_id: chatId, 
-            message_id: callbackQuery.message.message_id 
-        }
-    );
-    
-    await bot.answerCallbackQuery(callbackQuery.id);
-    
-    await bot.sendMessage(
-        chatId,
-        "Выберите возрастную категорию:",
-        {
-            reply_markup: {
-                inline_keyboard: ageButtons
+            // Обработка подтверждения регистрации
+            if (data === 'confirm_yes') {
+                const conn = await pool.getConnection();
+                await conn.query(
+                    `INSERT INTO users 
+                    (chat_id, first_name, middle_name, last_name, age, department, status, sex, SP_code, FIO_worker, town) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                    [
+                        chatId, 
+                        user.first_name, 
+                        user.middle_name,
+                        user.last_name, 
+                        user.age, 
+                        user.department,
+                        user.status,
+                        user.sex,
+                        user.SP_code,
+                        user.FIO_worker,
+                        user.town
+                    ]
+                );
+                conn.release();
+                
+                await bot.sendMessage(
+                    chatId, 
+                    `✅ Регистрация завершена! Добро пожаловать, ${user.first_name}!`
+                );
+                delete userState[chatId];
+                return;
             }
-        }
-    );
-    return;
-}
+
+            if (data === 'confirm_no') {
+                await bot.sendMessage(
+                    chatId, 
+                    "❌ Ввод данных отменен. Нажмите /start для начала новой регистрации"
+                );
+                delete userState[chatId];
+                return;
+            }
+
+            if (data.startsWith('status_')) {
+                const status = data.split('_')[1];
+                user.status = status;
+                user.step = 'age';
+
+                const ageButtons = [
+                    [{ text: "18-33 года", callback_data: "age_18-33" }],
+                    [{ text: "34-44 года", callback_data: "age_34-44" }],
+                    [{ text: "45-54 года", callback_data: "age_45-54" }],
+                    [{ text: "55+ лет", callback_data: "age_55+" }]
+                ];
+
+                if (status === 'family') {
+                    ageButtons.unshift([{ text: "1-17 лет", callback_data: "age_1-17" }]);
+                }
+
+                await bot.sendMessage(
+                    chatId,
+                    "Выберите возрастную категорию:",
+                    {
+                        reply_markup: {
+                            inline_keyboard: ageButtons
+                        }
+                    }
+                );
+                return;
+            }
 
             if (data.startsWith('age_')) {
                 user.age = data.split('_')[1];
@@ -243,35 +266,43 @@ if (data.startsWith('status_')) {
 
     handleTown: async (chatId, town) => {
         try {
-            const conn = await pool.getConnection();
-            await conn.query(
-                `INSERT INTO users 
-                (chat_id, first_name, middle_name, last_name, age, department, status, sex, SP_code, FIO_worker, town) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-                [
-                    chatId, 
-                    userState[chatId].first_name, 
-                    userState[chatId].middle_name,
-                    userState[chatId].last_name, 
-                    userState[chatId].age, 
-                    userState[chatId].department,
-                    userState[chatId].status,
-                    userState[chatId].sex,
-                    userState[chatId].SP_code,
-                    userState[chatId].FIO_worker,
-                    town
-                ]
-            );
-            conn.release();
+            const user = userState[chatId];
+            user.town = town;
             
+            // Формируем сообщение с данными для подтверждения
+            const userDataMessage = `
+Ваши данные:
+Фамилия: ${user.last_name}
+Имя: ${user.first_name}
+Отчество: ${user.middle_name || 'не указано'}
+Статус: ${user.status === 'worker' ? 'Работник' : 'Член семьи'}
+Возраст: ${user.age}
+Пол: ${user.sex}
+${user.status === 'worker' ? `Подразделение: ${user.department}` : `Код СП: ${user.SP_code || 'не указан'}\nФИО работника: ${user.FIO_worker || 'не указано'}`}
+Город: ${town}
+
+Все верно?
+            `;
+
+            // Отправляем сообщение с кнопками подтверждения
             await bot.sendMessage(
                 chatId, 
-                `✅ Спасибо, ${userState[chatId].first_name}! Регистрация завершена.`
+                userDataMessage,
+                {
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "Да", callback_data: "confirm_yes" }],
+                            [{ text: "Нет", callback_data: "confirm_no" }]
+                        ]
+                    }
+                }
             );
+            
+            // Переходим на шаг подтверждения
+            user.step = 'confirmation';
         } catch (err) {
             console.error(err);
-            await bot.sendMessage(chatId, "⚠️ Ошибка при сохранении данных.");
-        } finally {
+            await bot.sendMessage(chatId, "⚠️ Ошибка при обработке данных.");
             delete userState[chatId];
         }
     }
@@ -473,59 +504,13 @@ bot.on('callback_query', async (callbackQuery) => {
     try {
         console.log('Received callback:', data); // Логирование для отладки
 
-        // Обработка статуса (должна быть перед другими обработчиками)
-        if (data.startsWith('status_')) {
-            const status = data.split('_')[1];
-            
-            if (!userState[chatId]) {
-                userState[chatId] = {};
-            }
-            
-            userState[chatId].status = status;
-            userState[chatId].step = 'age';
-
-            const ageButtons = [
-                [{ text: "18-33 года", callback_data: "age_18-33" }],
-                [{ text: "34-44 года", callback_data: "age_34-44" }],
-                [{ text: "45-54 года", callback_data: "age_45-54" }],
-                [{ text: "55+ лет", callback_data: "age_55+" }]
-            ];
-
-            if (status === 'family') {
-                ageButtons.unshift([{ text: "1-17 лет", callback_data: "age_1-17" }]);
-            }
-
-            // Удаляем старые кнопки
-            await bot.editMessageReplyMarkup(
-                { inline_keyboard: [] },
-                { 
-                    chat_id: chatId, 
-                    message_id: callbackQuery.message.message_id 
-                }
-            );
-            
-            // Подтверждаем нажатие
-            await bot.answerCallbackQuery(callbackQuery.id);
-            
-            // Отправляем новые кнопки возраста
-            await bot.sendMessage(
-                chatId,
-                "Выберите возрастную категорию:",
-                {
-                    reply_markup: {
-                        inline_keyboard: ageButtons
-                    }
-                }
-            );
-            return;
-        }
-
-        // Перенаправляем обработку возраста и пола в модуль регистрации
-        if (data.startsWith('age_') || data.startsWith('sex_')) {
+        // Перенаправляем обработку в модуль регистрации
+        if (data.startsWith('status_') || data.startsWith('age_') || data.startsWith('sex_') || 
+            data === 'confirm_yes' || data === 'confirm_no') {
             return await registrationModule.handleCallbackQuery(callbackQuery);
         }
 
-        // Остальная обработка (forget_me, steps, report) остается без изменений
+        // Обработка кнопки "Удалить данные"
         if (data === 'forget_me') {
             conn = await pool.getConnection();
             await conn.query("DELETE FROM users WHERE chat_id = ?", [chatId]);
@@ -544,6 +529,7 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
+        // Обработка шагов
         if (data.startsWith('steps_date_')) {
             const date = data.replace('steps_date_', '');
             await bot.deleteMessage(chatId, callbackQuery.message.message_id);
@@ -558,6 +544,7 @@ bot.on('callback_query', async (callbackQuery) => {
             return;
         }
 
+        // Обработка отчетов
         if (data.startsWith('report_')) {
             const date = data.replace('report_', '');
             conn = await pool.getConnection();
