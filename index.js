@@ -1,15 +1,15 @@
-require('dotenv').config(); // загружаем переменные из .env
+require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const mysql = require('mysql2/promise');
 
 // Конфигурация
 const config = {
-    token: process.env.BOT_TOKEN, 
+    token: process.env.BOT_TOKEN,
     db: {
-        host: process.env.DB_HOST,                  
-        user: process.env.DB_USER,                 
-        password: process.env.DB_PASSWORD,          
-        database: process.env.DB_NAME,              
+        host: process.env.DB_HOST,
+        user: process.env.DB_USER,
+        password: process.env.DB_PASSWORD,
+        database: process.env.DB_NAME,
         port: parseInt(process.env.DB_PORT) || 3306,
         waitForConnections: true,
         connectionLimit: 10,
@@ -17,15 +17,12 @@ const config = {
     }
 };
 
-
-// Инициализация бота
+// Инициализация
 const bot = new TelegramBot(config.token, {polling: true});
 const pool = mysql.createPool(config.db);
 const userState = {};
 
-// ==================== Модули обработчиков ====================
-
-// 1. Модуль регистрации пользователя
+// ==================== МОДУЛЬ РЕГИСТРАЦИИ ====================
 const registrationModule = {
     start: async (chatId, user) => {
         if (user) {
@@ -43,8 +40,8 @@ const registrationModule = {
             );
             userState[chatId] = { buttonMessageId: sentMessage.message_id };
         } else {
-            await bot.sendMessage(chatId, "Здравствуйте! Давайте познакомимся. Как Ваше имя?");
-            userState[chatId] = { step: 'first_name' };
+            await bot.sendMessage(chatId, "Здравствуйте! Давайте познакомимся. Как Ваша фамилия?");
+            userState[chatId] = { step: 'last_name' };
         }
     },
 
@@ -56,55 +53,214 @@ const registrationModule = {
     
         try {
             switch (userState[chatId].step) {
-                case 'first_name':
-                    await registrationModule.handleFirstName(chatId, text);
-                    return true;
-                
                 case 'last_name':
                     await registrationModule.handleLastName(chatId, text);
                     return true;
-                
-                case 'age':
-                    await registrationModule.handleAge(chatId, text);
+                case 'first_name':
+                    await registrationModule.handleFirstName(chatId, text);
                     return true;
-                
+                case 'middle_name':
+                    await registrationModule.handleMiddleName(chatId, text);
+                    return true;
                 case 'department':
                     await registrationModule.handleDepartment(chatId, text);
                     return true;
+                case 'sp_code':
+                    await registrationModule.handleSPCode(chatId, text);
+                    return true;
+                case 'fio_worker':
+                    await registrationModule.handleFIOWorker(chatId, text);
+                    return true;
+                case 'town':
+                    await registrationModule.handleTown(chatId, text);
+                    return true;
+                default:
+                    return false;
             }
         } catch (err) {
             console.error('Ошибка регистрации:', err);
             await bot.sendMessage(chatId, "⚠️ Ошибка при обработке данных. Попробуйте снова.");
             delete userState[chatId];
+            return false;
         }
-        return false;
     },
 
-    handleFirstName: async (chatId, name) => {
-        userState[chatId] = { ...userState[chatId], first_name: name, step: 'last_name' };
-        await bot.sendMessage(chatId, "Какая у Вас фамилия?");
+    handleCallbackQuery: async (callbackQuery) => {
+        const chatId = callbackQuery.message.chat.id;
+        const data = callbackQuery.data;
+        const user = userState[chatId];
+
+        if (!user) {
+            console.log('Нет состояния для чата', chatId);
+            return;
+        }
+
+        try {
+            // Удаляем кнопки после выбора
+            await bot.editMessageReplyMarkup(
+                { inline_keyboard: [] },
+                { 
+                    chat_id: chatId, 
+                    message_id: callbackQuery.message.message_id 
+                }
+            );
+
+            // Подтверждаем нажатие кнопки
+            await bot.answerCallbackQuery(callbackQuery.id);
+
+    // Добавьте этот блок ПЕРЕД условием if (data.startsWith('age_')...:
+if (data.startsWith('status_')) {
+    const status = data.split('_')[1];
+    const chatId = callbackQuery.message.chat.id;
+    
+    if (!userState[chatId]) {
+        userState[chatId] = {};
+    }
+    
+    userState[chatId].status = status;
+    userState[chatId].step = 'age';
+
+    const ageButtons = [
+        [{ text: "18-33 года", callback_data: "age_18-33" }],
+        [{ text: "34-44 года", callback_data: "age_34-44" }],
+        [{ text: "45-54 года", callback_data: "age_45-54" }],
+        [{ text: "55+ лет", callback_data: "age_55+" }]
+    ];
+
+    if (status === 'family') {
+        ageButtons.unshift([{ text: "1-17 лет", callback_data: "age_1-17" }]);
+    }
+
+    await bot.editMessageReplyMarkup(
+        { inline_keyboard: [] },
+        { 
+            chat_id: chatId, 
+            message_id: callbackQuery.message.message_id 
+        }
+    );
+    
+    await bot.answerCallbackQuery(callbackQuery.id);
+    
+    await bot.sendMessage(
+        chatId,
+        "Выберите возрастную категорию:",
+        {
+            reply_markup: {
+                inline_keyboard: ageButtons
+            }
+        }
+    );
+    return;
+}
+
+            if (data.startsWith('age_')) {
+                user.age = data.split('_')[1];
+                user.step = 'sex';
+                await bot.sendMessage(
+                    chatId,
+                    "Укажите Ваш пол:",
+                    {
+                        reply_markup: {
+                            inline_keyboard: [
+                                [{ text: "Мужской", callback_data: "sex_male" }],
+                                [{ text: "Женский", callback_data: "sex_female" }]
+                            ]
+                        }
+                    }
+                );
+                return;
+            }
+
+            if (data.startsWith('sex_')) {
+                user.sex = data.split('_')[1] === 'male' ? 'Мужской' : 'Женский';
+                
+                if (user.status === 'worker') {
+                    user.step = 'department';
+                    await bot.sendMessage(chatId, "В каком подразделении Вы работаете?");
+                } else {
+                    user.step = 'sp_code';
+                    await bot.sendMessage(chatId, "Введите код СП (если есть):");
+                }
+                return;
+            }
+
+        } catch (err) {
+            console.error('Ошибка обработки callback:', err);
+            await bot.answerCallbackQuery(callbackQuery.id, {
+                text: 'Ошибка обработки запроса',
+                show_alert: false
+            });
+            await bot.sendMessage(chatId, "⚠️ Ошибка при обработке данных. Попробуйте снова.");
+            delete userState[chatId];
+        }
     },
 
     handleLastName: async (chatId, lastName) => {
-        userState[chatId] = { ...userState[chatId], last_name: lastName, step: 'age' };
-        await bot.sendMessage(chatId, "Сколько Вам лет?");
+        userState[chatId] = { ...userState[chatId], last_name: lastName, step: 'first_name' };
+        await bot.sendMessage(chatId, "Укажите Ваше имя:");
     },
 
-    handleAge: async (chatId, age) => {
-        if (isNaN(age)) {
-            await bot.sendMessage(chatId, "Пожалуйста, введите число.");
-            return;
-        }
-        userState[chatId] = { ...userState[chatId], age: Number(age), step: 'department' };
-        await bot.sendMessage(chatId, "В каком подразделении Вы работаете?");
+    handleFirstName: async (chatId, firstName) => {
+        userState[chatId] = { ...userState[chatId], first_name: firstName, step: 'middle_name' };
+        await bot.sendMessage(chatId, "Какое у Вас отчество? (Если нет, напишите \"нет\")");
+    },
+
+    handleMiddleName: async (chatId, middleName) => {
+        userState[chatId] = { 
+            ...userState[chatId], 
+            middle_name: middleName === "нет" ? null : middleName, 
+            step: 'status'
+        };
+        
+        await bot.sendMessage(
+            chatId,
+            "Выберите Ваш статус:",
+            {
+                reply_markup: {
+                    inline_keyboard: [
+                        [{ text: "Работник", callback_data: "status_worker" }],
+                        [{ text: "Член семьи", callback_data: "status_family" }]
+                    ]
+                }
+            }
+        );
     },
 
     handleDepartment: async (chatId, department) => {
+        userState[chatId] = { ...userState[chatId], department, step: 'town' };
+        await bot.sendMessage(chatId, "Из какого вы города?");
+    },
+
+    handleSPCode: async (chatId, spCode) => {
+        userState[chatId] = { ...userState[chatId], SP_code: spCode || null, step: 'fio_worker' };
+        await bot.sendMessage(chatId, "Укажите ФИО работника (если вы член семьи):");
+    },
+
+    handleFIOWorker: async (chatId, fioWorker) => {
+        userState[chatId] = { ...userState[chatId], FIO_worker: fioWorker || null, step: 'town' };
+        await bot.sendMessage(chatId, "Из какого вы города?");
+    },
+
+    handleTown: async (chatId, town) => {
         try {
             const conn = await pool.getConnection();
             await conn.query(
-                "INSERT INTO users (chat_id, first_name, last_name, age, department) VALUES (?, ?, ?, ?, ?)",
-                [chatId, userState[chatId].first_name, userState[chatId].last_name, userState[chatId].age, department]
+                `INSERT INTO users 
+                (chat_id, first_name, middle_name, last_name, age, department, status, sex, SP_code, FIO_worker, town) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                [
+                    chatId, 
+                    userState[chatId].first_name, 
+                    userState[chatId].middle_name,
+                    userState[chatId].last_name, 
+                    userState[chatId].age, 
+                    userState[chatId].department,
+                    userState[chatId].status,
+                    userState[chatId].sex,
+                    userState[chatId].SP_code,
+                    userState[chatId].FIO_worker,
+                    town
+                ]
             );
             conn.release();
             
@@ -121,7 +277,7 @@ const registrationModule = {
     }
 };
 
-// 2. Модуль работы с шагами
+// ==================== МОДУЛЬ ШАГОВ ====================
 const stepsModule = {
     startAdd: async (chatId) => {
         const buttons = [
@@ -169,7 +325,6 @@ const stepsModule = {
         const chatId = msg.chat.id;
         const text = msg.text.trim();
     
-        // Проверяем наличие шага и что он относится к модулю шагов
         if (!userState[chatId] || !['steps_count', 'meters_count'].includes(userState[chatId].step)) {
             return false;
         }
@@ -179,7 +334,6 @@ const stepsModule = {
                 case 'steps_count':
                     await stepsModule.handleSteps(chatId, text);
                     return true;
-                
                 case 'meters_count':
                     await stepsModule.handleMeters(chatId, text);
                     return true;
@@ -190,15 +344,6 @@ const stepsModule = {
             delete userState[chatId];
         }
         return false;
-    },
-
-    handleDate: async (chatId, date) => {
-        if (!date.match(/^\d{4}-\d{2}-\d{2}$/)) {
-            await bot.sendMessage(chatId, "Неверный формат даты. Используйте ГГГГ-ММ-ДД");
-            return;
-        }
-        userState[chatId] = { ...userState[chatId], date, step: 'steps_count' };
-        await bot.sendMessage(chatId, "Сколько шагов вы прошли?");
     },
 
     handleSteps: async (chatId, steps) => {
@@ -238,7 +383,7 @@ const stepsModule = {
     }
 };
 
-// 3. Модуль приветствий
+// ==================== МОДУЛЬ ПРИВЕТСТВИЙ ====================
 const greetingModule = {
     sendGreeting: async (chatId) => {
         try {
@@ -261,9 +406,9 @@ const greetingModule = {
     }
 };
 
-// ==================== Обработчики команд ====================
+// ==================== ОБРАБОТЧИКИ КОМАНД ====================
 
-// 1. Обработчик /start
+// Обработчик /start
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     
@@ -279,24 +424,22 @@ bot.onText(/\/start/, async (msg) => {
     }
 });
 
-// 2. Обработчик /add
+// Обработчик /add
 bot.onText(/\/add/, async (msg) => {
     await stepsModule.startAdd(msg.chat.id);
 });
 
-// 3. Обработчик /report
+// Обработчик /report
 bot.onText(/\/report/, async (msg) => {
     await stepsModule.startReport(msg.chat.id);
 });
 
-// 4. Обработчик /hello
+// Обработчик /hello
 bot.onText(/\/hello/, async (msg) => {
     await greetingModule.sendGreeting(msg.chat.id);
 });
 
-// ==================== Обработчики сообщений ====================
-
-// 1. Главный обработчик сообщений
+// Обработчик сообщений
 bot.on('message', async (msg) => {
     if (!msg.text || msg.text.startsWith('/')) return;
 
@@ -321,27 +464,73 @@ bot.on('message', async (msg) => {
         await stepsModule.handleMessage(msg);
 });
 
-// 2. Обработчик callback-запросов
+// Обработчик callback-запросов
 bot.on('callback_query', async (callbackQuery) => {
     const chatId = callbackQuery.message.chat.id;
     const data = callbackQuery.data;
-    let conn; // Объявляем conn здесь, чтобы она была доступна в finally
+    let conn;
 
     try {
-        if (data.startsWith('steps_date_')) {
-            const date = data.replace('steps_date_', '');
-            await bot.deleteMessage(chatId, callbackQuery.message.message_id);
-            userState[chatId] = { date, step: 'steps_count' };
-            await bot.sendMessage(chatId, `Выбрана дата: ${date}\nСколько шагов вы прошли?`);
+        console.log('Received callback:', data); // Логирование для отладки
+
+        // Обработка статуса (должна быть перед другими обработчиками)
+        if (data.startsWith('status_')) {
+            const status = data.split('_')[1];
+            
+            if (!userState[chatId]) {
+                userState[chatId] = {};
+            }
+            
+            userState[chatId].status = status;
+            userState[chatId].step = 'age';
+
+            const ageButtons = [
+                [{ text: "18-33 года", callback_data: "age_18-33" }],
+                [{ text: "34-44 года", callback_data: "age_34-44" }],
+                [{ text: "45-54 года", callback_data: "age_45-54" }],
+                [{ text: "55+ лет", callback_data: "age_55+" }]
+            ];
+
+            if (status === 'family') {
+                ageButtons.unshift([{ text: "1-17 лет", callback_data: "age_1-17" }]);
+            }
+
+            // Удаляем старые кнопки
+            await bot.editMessageReplyMarkup(
+                { inline_keyboard: [] },
+                { 
+                    chat_id: chatId, 
+                    message_id: callbackQuery.message.message_id 
+                }
+            );
+            
+            // Подтверждаем нажатие
+            await bot.answerCallbackQuery(callbackQuery.id);
+            
+            // Отправляем новые кнопки возраста
+            await bot.sendMessage(
+                chatId,
+                "Выберите возрастную категорию:",
+                {
+                    reply_markup: {
+                        inline_keyboard: ageButtons
+                    }
+                }
+            );
+            return;
         }
-        else if (data === 'steps_cancel') {
-            await bot.deleteMessage(chatId, callbackQuery.message.message_id);
-            delete userState[chatId];
+
+        // Перенаправляем обработку возраста и пола в модуль регистрации
+        if (data.startsWith('age_') || data.startsWith('sex_')) {
+            return await registrationModule.handleCallbackQuery(callbackQuery);
         }
-        else if (data === 'forget_me') {
+
+        // Остальная обработка (forget_me, steps, report) остается без изменений
+        if (data === 'forget_me') {
             conn = await pool.getConnection();
             await conn.query("DELETE FROM users WHERE chat_id = ?", [chatId]);
             await conn.query("DELETE FROM steps WHERE chat_id = ?", [chatId]);
+            conn.release();
             
             await bot.editMessageReplyMarkup(
                 { inline_keyboard: [] },
@@ -352,17 +541,31 @@ bot.on('callback_query', async (callbackQuery) => {
             );
             await bot.sendMessage(chatId, "✅ Данные удалены. Начните с /start");
             delete userState[chatId];
-        } 
-        else if (data === 'report_cancel') {
-            await bot.deleteMessage(chatId, callbackQuery.message.message_id);
+            return;
         }
-        else if (data.startsWith('report_')) {
+
+        if (data.startsWith('steps_date_')) {
+            const date = data.replace('steps_date_', '');
+            await bot.deleteMessage(chatId, callbackQuery.message.message_id);
+            userState[chatId] = { date, step: 'steps_count' };
+            await bot.sendMessage(chatId, `Выбрана дата: ${date}\nСколько шагов вы прошли?`);
+            return;
+        }
+
+        if (data === 'steps_cancel') {
+            await bot.deleteMessage(chatId, callbackQuery.message.message_id);
+            delete userState[chatId];
+            return;
+        }
+
+        if (data.startsWith('report_')) {
             const date = data.replace('report_', '');
             conn = await pool.getConnection();
             const [rows] = await conn.query(
                 "SELECT steps, meters FROM steps WHERE chat_id = ? AND DATE(date) = ?",
                 [chatId, date]
             );
+            conn.release();
 
             await bot.deleteMessage(chatId, callbackQuery.message.message_id);
 
@@ -374,22 +577,23 @@ bot.on('callback_query', async (callbackQuery) => {
             } else {
                 await bot.sendMessage(chatId, `Данные за ${date} не найдены.`);
             }
+            return;
         }
+
+        if (data === 'report_cancel') {
+            await bot.deleteMessage(chatId, callbackQuery.message.message_id);
+            return;
+        }
+
+        await bot.answerCallbackQuery(callbackQuery.id);
     } catch (err) {
         console.error('Ошибка callback:', err);
-        await bot.sendMessage(chatId, "⚠️ Ошибка обработки запроса.");
+        await bot.answerCallbackQuery(callbackQuery.id, {
+            text: 'Ошибка обработки запроса',
+            show_alert: false
+        });
     } finally {
-        if (conn) await conn.release(); // Освобождаем соединение, если оно было создано
-    }
-});
-
-// 3. Обработчик добавления в группу
-bot.on('new_chat_members', (msg) => {
-    if (msg.new_chat_members.some(m => m.username === bot.options.username)) {
-        bot.sendMessage(
-            msg.chat.id,
-            'Спасибо за добавление! Используйте команды в личных сообщениях со мной.'
-        );
+        if (conn) await conn.release();
     }
 });
 
