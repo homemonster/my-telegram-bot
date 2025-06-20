@@ -1,4 +1,4 @@
-require('dotenv').config();
+   require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const mysql = require('mysql2/promise');
 
@@ -44,58 +44,58 @@ function validateUserInput(text) {
 // Структура подразделений
 const departmentStructure = {
     'dep_1': {
-        name: 'Департамент 1',
+        name: 'ЦА',
         management: {
-            'man_1': { name: 'Управление 1', hasDepartments: true },
-            'man_2': { name: 'Управление 2', hasDepartments: true },
-            'man_t': { name: 'Управление Т', hasDepartments: false }
+            'man_1': { name: 'ДБРА', hasDepartments: false },
+            'man_2': { name: 'ДДПДФО', hasDepartments: false },
+            'man_t': { name: 'ДДПП', hasDepartments: false }
         }
     },
     'dep_2': {
-        name: 'Департамент 2',
+        name: 'ТУ',
         management: {
-            'man_3': { name: 'Управление 3', hasDepartments: true },
-            'man_4': { name: 'Управление 4', hasDepartments: true },
-            'man_t': { name: 'Управление Т', hasDepartments: false }
+            'man_3': { name: 'ГУ по ЦФО', hasDepartments: true },
+            'man_4': { name: 'УГУ', hasDepartments: true },
+            'man_7': { name: 'ЮГУ', hasDepartments: true }
         }
     },
     'dep_3': {
-        name: 'Департамент 3',
+        name: 'Подразделения',
         management: {
-            'man_5': { name: 'Управление 5', hasDepartments: true },
-            'man_6': { name: 'Управление 6', hasDepartments: true },
-            'man_t': { name: 'Управление Т', hasDepartments: false }
+            'man_5': { name: 'КОП', hasDepartments: false },
+            'man_6': { name: 'Автопредприятие', hasDepartments: false },
+            'man_t': { name: 'ММЦ', hasDepartments: false }
         }
     }
 };
 
 // Структура отделов
 const departments = {
-    'man_1': {
-        name: 'Управление 1',
-        departments: {
-            'dep_1': 'Отдел 1',
-            'dep_2': 'Отдел 2',
-            'dep_3': 'Отдел 3',
-            'dep_4': 'Отдел 4'
-        }
-    },
-    'man_2': {
-        name: 'Управление 2',
-        departments: {
-            'dep_5': 'Отдел 5',
-            'dep_6': 'Отдел 6',
-            'dep_7': 'Отдел 7',
-            'dep_8': 'Отдел 8'
-        }
-    },
     'man_3': {
-        name: 'Управление 3',
+        name: 'ГУ по ЦФО',
         departments: {
-            'dep_9': 'Отдел 9',
-            'dep_10': 'Отдел 10',
-            'dep_11': 'Отдел 11',
-            'dep_12': 'Отдел 12'
+            'dep_1': 'Аппарат',
+            'dep_2': 'Отделение 1',
+            'dep_3': 'Отделение 2',
+            'dep_4': 'Отделение 3'
+        }
+    },
+    'man_4': {
+        name: 'УГУ',
+        departments: {
+            'dep_5': 'Аппарат',
+            'dep_6': 'Отделение 4',
+            'dep_7': 'Отделение 5',
+            'dep_8': 'Отделение 6'
+        }
+    },
+    'man_7': {
+        name: 'ЮГУ',
+        departments: {
+            'dep_9': 'Аппарат',
+            'dep_10': 'Отдел 7',
+            'dep_11': 'Отдел 8',
+            'dep_12': 'Отдел 9'
         }
     }
 };
@@ -136,8 +136,6 @@ const registrationModule = {
                     return await registrationModule.handleFirstName(chatId, text, msg);
                 case 'middle_name':
                     return await registrationModule.handleMiddleName(chatId, text, msg);
-                case 'sp_code':
-                    return await registrationModule.handleSPCode(chatId, text, msg);
                 case 'fio_worker':
                     return await registrationModule.handleFIOWorker(chatId, text, msg);
                 case 'town':
@@ -262,8 +260,8 @@ const registrationModule = {
                     user.step = 'select_department';
                     await registrationModule.handleSelectDepartment(chatId);
                 } else {
-                    user.step = 'sp_code';
-                    await bot.sendMessage(chatId, "Введите код СП (если есть):");
+                    user.step = 'fio_worker';
+                    await bot.sendMessage(chatId, "Введите ФИО (полностью) члена семьи, работающего в ЦБ РФ:");
                 }
                 return;
             }
@@ -389,7 +387,7 @@ const registrationModule = {
 Статус: ${user.status === 'worker' ? 'Работник' : 'Член семьи'}
 Возраст: ${user.age}
 Пол: ${user.sex}
-${user.status === 'worker' ? `Подразделение: ${user.department}` : `Код СП: ${user.SP_code || 'не указан'}\nФИО работника: ${user.FIO_worker}`}
+${user.status === 'worker' ? `Подразделение: ${user.department}` : `ФИО работника: ${user.FIO_worker}`}
 ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` : ''}
 Все верно?
 `;
@@ -505,16 +503,6 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
         );
     },
 
-    handleSPCode: async (chatId, spCode, msg) => {
-        if (!spCode || spCode.toLowerCase() === "нет") {
-            userState[chatId] = { ...userState[chatId], SP_code: null, step: 'fio_worker' };
-            await bot.sendMessage(chatId, "Введите ФИО (полностью) члена семьи, работающего в ЦБ РФ");
-            return;
-        }
-        userState[chatId] = { ...userState[chatId], SP_code: spCode, step: 'fio_worker' };
-        await bot.sendMessage(chatId, "Введите ФИО (полностью) члена семьи, работающего в ЦБ РФ");
-    },
-
     handleFIOWorker: async (chatId, fioWorker, msg) => {
         const validation = validateUserInput(fioWorker);
         if (!validation.valid) {
@@ -545,7 +533,7 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
 Статус: ${user.status === 'worker' ? 'Работник' : 'Член семьи'}
 Возраст: ${user.age}
 Пол: ${user.sex}
-${user.status === 'worker' ? `Подразделение: ${user.department}` : `Код СП: ${user.SP_code || 'не указан'}\nФИО работника: ${user.FIO_worker}`}
+${user.status === 'worker' ? `Подразделение: ${user.department}` : `ФИО работника: ${user.FIO_worker}`}
 Город: ${town}
 Все верно?
 `;
@@ -595,7 +583,7 @@ const stepsModule = {
             conn.release();
 
             if (rows.length === 0) {
-                await bot.sendMessage(chatId, "У вас нет данных для отчёта.");
+                await bot.sendMessage(chatId, "У Вас нет данных для отчёта.");
                 return;
             }
 
