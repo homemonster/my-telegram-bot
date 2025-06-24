@@ -1,4 +1,4 @@
-   require('dotenv').config();
+require('dotenv').config();
 const TelegramBot = require('node-telegram-bot-api');
 const mysql = require('mysql2/promise');
 
@@ -24,19 +24,19 @@ const userState = {};
 
 // ==================== ФУНКЦИЯ ПРОВЕРКИ ВВОДА ====================
 function validateUserInput(text) {
+    console.log(`[VALIDATION] Проверка ввода: "${text}"`);
     const rules = {
         minLength: 2,
-        allowedChars: /^[а-яА-ЯёЁ\s]+$/,
-        forbiddenSymbols: /[.,!?:;"'`~@#$%^&*()\-+=\[\]{}|\\/<>\d]/
+        allowedChars: /^[а-яА-ЯёЁ\s-]+$/,
     };
+    
     if (text.length < rules.minLength) {
+        console.log(`[VALIDATION ERROR] Слишком короткий ввод: ${text.length} символов`);
         return { valid: false, message: "❌ Минимум 2 символа." };
     }
     if (!rules.allowedChars.test(text)) {
-        return { valid: false, message: "❌ Только кириллица (русский язык)." };
-    }
-    if (rules.forbiddenSymbols.test(text)) {
-        return { valid: false, message: "❌ Недопустимые символы (точки, цифры, знаки и т.д.)." };
+        console.log(`[VALIDATION ERROR] Недопустимые символы в: "${text}"`);
+        return { valid: false, message: "❌ Только кириллица, пробелы и дефисы." };
     }
     return { valid: true };
 }
@@ -100,9 +100,28 @@ const departments = {
     }
 };
 
+// ==================== ФУНКЦИЯ ПРОВЕРКИ ВВОДА ====================
+function validateUserInput(text) {
+    console.log(`[VALIDATION] Проверка ввода: "${text}"`);
+    const rules = {
+        minLength: 2,
+        allowedChars: /^[а-яА-ЯёЁ\s-]+$/,
+    };
+    if (text.length < rules.minLength) {
+        console.log(`[VALIDATION ERROR] Слишком короткий ввод: ${text.length} символов`);
+        return { valid: false, message: "❌ Минимум 2 символа." };
+    }
+    if (!rules.allowedChars.test(text)) {
+        console.log(`[VALIDATION ERROR] Недопустимые символы в: "${text}"`);
+        return { valid: false, message: "❌ Только кириллица, пробелы и дефисы." };
+    }
+    return { valid: true };
+}
+
 // ==================== МОДУЛЬ РЕГИСТРАЦИИ ====================
 const registrationModule = {
     start: async (chatId, user) => {
+        console.log(`[REGISTRATION START] chatId: ${chatId}, user exists: ${!!user}`);
         if (user) {
             const options = {
                 reply_markup: {
@@ -117,17 +136,21 @@ const registrationModule = {
                 options
             );
             userState[chatId] = { buttonMessageId: sentMessage.message_id };
+            console.log(`[REGISTRATION] Пользователь уже зарегистрирован, предложено удаление данных`);
         } else {
             await bot.sendMessage(chatId, "Здравствуйте! Давайте познакомимся. Как Ваша фамилия?");
             userState[chatId] = { step: 'last_name' };
+            console.log(`[REGISTRATION] Начата регистрация нового пользователя`);
         }
     },
-
     handleMessage: async (msg) => {
         const chatId = msg.chat.id;
         const text = msg.text.trim();
-        if (!userState[chatId]?.step) return false;
-
+        if (!userState[chatId]?.step) {
+            console.log(`[REGISTRATION ERROR] Нет шага регистрации для chatId: ${chatId}`);
+            return false;
+        }
+        console.log(`[REGISTRATION STEP] chatId: ${chatId}, step: ${userState[chatId].step}, input: "${text}"`);
         try {
             switch (userState[chatId].step) {
                 case 'last_name':
@@ -141,26 +164,25 @@ const registrationModule = {
                 case 'town':
                     return await registrationModule.handleTown(chatId, text, msg);
                 default:
+                    console.log(`[REGISTRATION ERROR] Неизвестный шаг регистрации: ${userState[chatId].step}`);
                     return false;
             }
         } catch (err) {
-            console.error('Ошибка регистрации:', err);
+            console.error('[REGISTRATION ERROR] Ошибка регистрации:', err);
             await bot.sendMessage(chatId, "⚠️ Ошибка при обработке данных. Попробуйте снова.");
             delete userState[chatId];
             return false;
         }
     },
-
     handleCallbackQuery: async (callbackQuery) => {
         const chatId = callbackQuery.message.chat.id;
         const data = callbackQuery.data;
         const user = userState[chatId];
-
         if (!user) {
-            console.log('Нет состояния для чата', chatId);
+            console.log(`[CALLBACK ERROR] Нет состояния для чата ${chatId}`);
             return;
         }
-
+        console.log(`[CALLBACK] chatId: ${chatId}, data: ${data}, step: ${user.step}`);
         try {
             // Удаляем кнопки после выбора
             await bot.editMessageReplyMarkup(
@@ -172,6 +194,7 @@ const registrationModule = {
 
             // Обработка подтверждения регистрации
             if (data === 'confirm_yes') {
+                console.log(`[REGISTRATION CONFIRM] Пользователь подтвердил данные`, user);
                 const conn = await pool.getConnection();
                 await conn.query(
                     `INSERT INTO users 
@@ -196,11 +219,13 @@ const registrationModule = {
                     chatId,
                     `✅ Добро пожаловать, ${user.first_name}! Регистрация завершена, теперь Вы можете вносить результаты.`
                 );
+                console.log(`[REGISTRATION COMPLETE] Пользователь ${chatId} успешно зарегистрирован`);
                 delete userState[chatId];
                 return;
             }
 
             if (data === 'confirm_no') {
+                console.log(`[REGISTRATION CANCEL] Пользователь отменил регистрацию`);
                 await bot.sendMessage(
                     chatId,
                     "❌ Ввод данных отменен. Нажмите /start для начала новой регистрации"
@@ -213,17 +238,14 @@ const registrationModule = {
                 const status = data.split('_')[1];
                 user.status = status;
                 user.step = 'age';
-
+                console.log(`[REGISTRATION STEP] Установлен статус: ${status}`);
                 const ageButtons = [
+                    [{ text: "1-17 лет", callback_data: "age_1-17" }],
                     [{ text: "18-33 года", callback_data: "age_18-33" }],
                     [{ text: "34-44 года", callback_data: "age_34-44" }],
                     [{ text: "45-54 года", callback_data: "age_45-54" }],
                     [{ text: "55+ лет", callback_data: "age_55+" }]
-                ];
-                if (status === 'family') {
-                    ageButtons.unshift([{ text: "1-17 лет", callback_data: "age_1-17" }]);
-                }
-
+                ].filter(btn => status === 'family' || btn[0].callback_data !== "age_1-17");
                 await bot.sendMessage(
                     chatId,
                     "Выберите возрастную категорию:",
@@ -239,6 +261,7 @@ const registrationModule = {
             if (data.startsWith('age_')) {
                 user.age = data.split('_')[1];
                 user.step = 'sex';
+                console.log(`[REGISTRATION STEP] Установлен возраст: ${user.age}`);
                 await bot.sendMessage(
                     chatId,
                     "Укажите Ваш пол:",
@@ -256,11 +279,14 @@ const registrationModule = {
 
             if (data.startsWith('sex_')) {
                 user.sex = data.split('_')[1] === 'male' ? 'Мужской' : 'Женский';
+                console.log(`[REGISTRATION STEP] Установлен пол: ${user.sex}`);
                 if (user.status === 'worker') {
                     user.step = 'select_department';
+                    console.log(`[REGISTRATION STEP] Начало выбора подразделения для работника`);
                     await registrationModule.handleSelectDepartment(chatId);
                 } else {
                     user.step = 'fio_worker';
+                    console.log(`[REGISTRATION STEP] Запрос ФИО работника для члена семьи`);
                     await bot.sendMessage(chatId, "Введите ФИО (полностью) члена семьи, работающего в ЦБ РФ:");
                 }
                 return;
@@ -268,27 +294,26 @@ const registrationModule = {
 
             if (data.startsWith('department_')) {
                 const depId = data.replace('department_', '');
-                
+                console.log(`[DEPARTMENT SELECT] Выбрано подразделение: ${depId}`);
                 if (!departmentStructure[depId]) {
-                    console.error('Департамент не найден:', depId);
+                    console.error('[DEPARTMENT ERROR] Департамент не найден:', depId);
                     await bot.sendMessage(chatId, "⚠️ Ошибка: департамент не найден");
                     return;
                 }
-                
                 user.selectedDepartment = depId;
                 user.step = 'select_management';
-
-                const managementButtons = Object.entries(departmentStructure[depId].management).map(([key, value]) => ({
-                    text: value.name,
-                    callback_data: `management_${key}`
-                }));
-
+                console.log(`[REGISTRATION STEP] Выбор управления для департамента: ${depId}`);
+                const managementButtons = Object.entries(departmentStructure[depId].management)
+                    .map(([key, value]) => {
+                        return [{ text: value.name, callback_data: `management_${key}` }];
+                    });
                 await bot.sendMessage(
                     chatId,
-                    "Выберите управление:",
+                    "Выберите подразделение:",
                     {
                         reply_markup: {
-                            inline_keyboard: [managementButtons]
+                            inline_keyboard: managementButtons,
+                            resize_keyboard: true
                         }
                     }
                 );
@@ -298,18 +323,19 @@ const registrationModule = {
             if (data.startsWith('management_')) {
                 const fullManId = data.replace('management_', '');
                 const depId = user.selectedDepartment;
-
+                console.log(`[MANAGEMENT SELECT] Выбрано управление: ${fullManId} в департаменте: ${depId}`);
                 if (!departmentStructure[depId] || !departmentStructure[depId].management) {
-                    console.error('Не найдена структура для департамента:', depId);
-                    await bot.sendMessage(chatId, "⚠️ Ошибка при выборе управления. Попробуйте снова.");
+                    console.error('[MANAGEMENT ERROR] Не найдена структура для департамента:', depId);
+                    await bot.sendMessage(chatId, "⚠️ Ошибка при выборе подразделения. Попробуйте снова.");
                     return;
                 }
-
                 user.selectedManagement = fullManId;
+                const currentManagement = departmentStructure[depId].management[fullManId];
 
-                if (fullManId === 'man_t') {
-                    user.department = `${departmentStructure[depId].name} - ${departmentStructure[depId].management[fullManId].name}`;
-                    // Для работника пропускаем город, для члена семьи - запрашиваем
+                // Унифицированная обработка подразделений без отделов
+                if (!currentManagement.hasDepartments) {
+                    user.department = `${departmentStructure[depId].name} - ${currentManagement.name}`;
+                    console.log(`[DEPARTMENT SET] Подразделение без отделов: ${user.department}`);
                     if (user.status === 'worker') {
                         await registrationModule.showConfirmation(chatId);
                     } else {
@@ -320,24 +346,24 @@ const registrationModule = {
                 }
 
                 if (!departments[fullManId] || !departments[fullManId].departments) {
-                    console.error('Не найдены отделы для управления:', fullManId);
-                    await bot.sendMessage(chatId, "⚠️ Ошибка при выборе отдела. Попробуйте снова.");
+                    console.error('[DEPARTMENT ERROR] Не найдены отделы для управления:', fullManId);
+                    await bot.sendMessage(chatId, "⚠️ Ошибка при выборе подразделения. Попробуйте снова. /start");
                     return;
                 }
 
                 user.step = 'select_department_final';
-
-                const departmentButtons = Object.entries(departments[fullManId].departments).map(([key, value]) => ({
-                    text: value,
-                    callback_data: `final_department_${key}`
-                }));
-
+                console.log(`[REGISTRATION STEP] Выбор финального отдела для управления: ${fullManId}`);
+                const departmentButtons = Object.entries(departments[fullManId].departments)
+                    .map(([key, value]) => {
+                        return [{ text: value, callback_data: `final_department_${key}` }];
+                    });
                 await bot.sendMessage(
                     chatId,
                     "Выберите отдел:",
                     {
                         reply_markup: {
-                            inline_keyboard: [departmentButtons]
+                            inline_keyboard: departmentButtons,
+                            resize_keyboard: true
                         }
                     }
                 );
@@ -347,13 +373,18 @@ const registrationModule = {
             if (data.startsWith('final_department_')) {
                 const fullDepId = data.replace('final_department_', '');
                 const selectedMan = user.selectedManagement;
+                console.log(`[FINAL DEPARTMENT SELECT] Выбран отдел: ${fullDepId} в управлении: ${selectedMan}`);
+                if (!departments[selectedMan] || !departments[selectedMan].departments[fullDepId]) {
+                    console.error('[FINAL DEPARTMENT ERROR] Отдел не найден:', fullDepId);
+                    await bot.sendMessage(chatId, "⚠️ Ошибка: отдел не найден");
+                    return;
+                }
                 const selectedDep = departments[selectedMan].departments[fullDepId];
-
                 const depPart = departmentStructure[user.selectedDepartment]?.name || '';
                 const managementPart = departments[selectedMan]?.name || '';
-
                 user.department = `${depPart} - ${managementPart} - ${selectedDep}`;
-                // Для работника пропускаем город, для члена семьи - запрашиваем
+                console.log(`[DEPARTMENT SET] Полный путь подразделения: ${user.department}`);
+
                 if (user.status === 'worker') {
                     await registrationModule.showConfirmation(chatId);
                 } else {
@@ -362,9 +393,8 @@ const registrationModule = {
                 }
                 return;
             }
-
         } catch (err) {
-            console.error('Ошибка обработки callback:', err);
+            console.error('[CALLBACK ERROR] Ошибка обработки callback:', err);
             await bot.answerCallbackQuery(callbackQuery.id, {
                 text: 'Ошибка обработки запроса',
                 show_alert: false
@@ -373,12 +403,16 @@ const registrationModule = {
             delete userState[chatId];
         }
     },
-
     showConfirmation: async (chatId) => {
         try {
             const user = userState[chatId];
+            if (!user) {
+                console.error('[CONFIRMATION ERROR] Нет данных пользователя для подтверждения');
+                await bot.sendMessage(chatId, "⚠️ Ошибка: данные не найдены. Начните регистрацию заново.");
+                return;
+            }
             user.town = user.status === 'worker' ? null : user.town;
-
+            console.log(`[CONFIRMATION] Подготовка данных для подтверждения`, user);
             const userDataMessage = `
 Ваши данные:
 Фамилия: ${user.last_name}
@@ -404,34 +438,35 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
                 }
             );
             user.step = 'confirmation';
+            console.log(`[CONFIRMATION] Данные отправлены пользователю для подтверждения`);
         } catch (err) {
-            console.error(err);
+            console.error('[CONFIRMATION ERROR] Ошибка при подтверждении:', err);
             await bot.sendMessage(chatId, "⚠️ Ошибка при обработке данных.");
             delete userState[chatId];
         }
     },
-
     handleSelectDepartment: async (chatId) => {
         try {
-            const buttons = Object.entries(departmentStructure).map(([key, value]) => ({
-                text: value.name,
-                callback_data: `department_${key}`
-            }));
+            console.log(`[DEPARTMENT SELECT] Начало выбора подразделения для chatId: ${chatId}`);
+            const buttons = Object.entries(departmentStructure).map(([key, value]) => {
+                return [{ text: value.name, callback_data: `department_${key}` }];
+            });
             await bot.sendMessage(
                 chatId,
-                "Выберите департамент:",
+                "Выберите подразделение:",
                 {
                     reply_markup: {
-                        inline_keyboard: [buttons]
+                        inline_keyboard: buttons,
+                        resize_keyboard: true
                     }
                 }
             );
+            console.log(`[DEPARTMENT SELECT] Отправлены варианты подразделений`);
         } catch (err) {
-            console.error('Ошибка выбора департамента:', err);
-            await bot.sendMessage(chatId, "⚠️ Ошибка при выборе департамента.");
+            console.error('[DEPARTMENT SELECT ERROR] Ошибка выбора подразделения:', err);
+            await bot.sendMessage(chatId, "⚠️ Ошибка при выборе подразделения.");
         }
     },
-
     handleLastName: async (chatId, lastName, msg) => {
         const validation = validateUserInput(lastName);
         if (!validation.valid) {
@@ -440,9 +475,9 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
             return;
         }
         userState[chatId] = { ...userState[chatId], last_name: lastName, step: 'first_name' };
+        console.log(`[REGISTRATION STEP] Установлена фамилия: ${lastName}`);
         await bot.sendMessage(chatId, "Укажите Ваше имя:");
     },
-
     handleFirstName: async (chatId, firstName, msg) => {
         const validation = validateUserInput(firstName);
         if (!validation.valid) {
@@ -451,9 +486,9 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
             return;
         }
         userState[chatId] = { ...userState[chatId], first_name: firstName, step: 'middle_name' };
+        console.log(`[REGISTRATION STEP] Установлено имя: ${firstName}`);
         await bot.sendMessage(chatId, "Какое у Вас отчество? (Если нет, напишите \"нет\")");
     },
-
     handleMiddleName: async (chatId, middleName, msg) => {
         if (middleName.toLowerCase() === "нет") {
             userState[chatId] = {
@@ -461,6 +496,7 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
                 middle_name: null,
                 step: 'status'
             };
+            console.log(`[REGISTRATION STEP] Отчество не указано`);
             await bot.sendMessage(
                 chatId,
                 "Выберите Ваш статус:",
@@ -475,20 +511,18 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
             );
             return;
         }
-
         const validation = validateUserInput(middleName);
         if (!validation.valid) {
             await bot.sendMessage(chatId, validation.message + "\nПопробуйте снова:");
             await bot.deleteMessage(chatId, msg.message_id).catch(() => {});
             return;
         }
-
         userState[chatId] = {
             ...userState[chatId],
             middle_name: middleName,
             step: 'status'
         };
-
+        console.log(`[REGISTRATION STEP] Установлено отчество: ${middleName}`);
         await bot.sendMessage(
             chatId,
             "Выберите Ваш статус:",
@@ -502,7 +536,6 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
             }
         );
     },
-
     handleFIOWorker: async (chatId, fioWorker, msg) => {
         const validation = validateUserInput(fioWorker);
         if (!validation.valid) {
@@ -511,9 +544,9 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
             return;
         }
         userState[chatId] = { ...userState[chatId], FIO_worker: fioWorker, step: 'town' };
+        console.log(`[REGISTRATION STEP] Установлено ФИО работника: ${fioWorker}`);
         await bot.sendMessage(chatId, "Из какого Вы города?");
     },
-
     handleTown: async (chatId, town, msg) => {
         const validation = validateUserInput(town);
         if (!validation.valid) {
@@ -523,8 +556,13 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
         }
         try {
             const user = userState[chatId];
+            if (!user) {
+                console.error('[TOWN ERROR] Нет данных пользователя');
+                await bot.sendMessage(chatId, "⚠️ Ошибка: данные не найдены. Начните регистрацию заново.");
+                return;
+            }
             user.town = town;
-
+            console.log(`[REGISTRATION STEP] Установлен город: ${town}`);
             const userDataMessage = `
 Ваши данные:
 Фамилия: ${user.last_name}
@@ -550,8 +588,9 @@ ${user.status === 'worker' ? `Подразделение: ${user.department}` : 
                 }
             );
             user.step = 'confirmation';
+            console.log(`[CONFIRMATION] Данные отправлены пользователю для подтверждения`);
         } catch (err) {
-            console.error(err);
+            console.error('[TOWN ERROR] Ошибка при обработке города:', err);
             await bot.sendMessage(chatId, "⚠️ Ошибка при обработке данных.");
             delete userState[chatId];
         }
@@ -641,6 +680,15 @@ const stepsModule = {
     handleMeters: async (chatId, meters, msg) => {
         if (isNaN(meters)) {
             await bot.sendMessage(chatId, "Пожалуйста, введите число.");
+            await bot.deleteMessage(chatId, msg.message_id).catch(() => {});
+            return;
+        }
+    
+    // Берем steps из userState
+        const { steps } = userState[chatId];
+        
+        if (meters > steps * 0.001 || meters < steps * 0.0005) {
+            await bot.sendMessage(chatId, "Количество км не соответствует количеству шагов, уточните.");
             await bot.deleteMessage(chatId, msg.message_id).catch(() => {});
             return;
         }
@@ -809,7 +857,7 @@ bot.on('callback_query', async (callbackQuery) => {
             await bot.deleteMessage(chatId, callbackQuery.message.message_id);
 
             if (rows.length > 0) {
-                await bot.sendMessage(chatId, `📊 Отчёт за ${date}:\nШаги: ${rows[0].steps}\nМетры: ${rows[0].meters}`);
+                await bot.sendMessage(chatId, `📊 Отчёт за ${date}:\nШаги: ${rows[0].steps}\nКилометры: ${rows[0].meters}`);
             } else {
                 await bot.sendMessage(chatId, `Данные за ${date} не найдены.`);
             }
