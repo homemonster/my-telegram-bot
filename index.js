@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { departmentStructure, departments } = require('./dep_struct');
 const TelegramBot = require('node-telegram-bot-api');
 const mysql = require('mysql2/promise');
 
@@ -21,84 +22,6 @@ const config = {
 const bot = new TelegramBot(config.token, { polling: true });
 const pool = mysql.createPool(config.db);
 const userState = {};
-
-// ==================== ФУНКЦИЯ ПРОВЕРКИ ВВОДА ====================
-function validateUserInput(text) {
-    console.log(`[VALIDATION] Проверка ввода: "${text}"`);
-    const rules = {
-        minLength: 2,
-        allowedChars: /^[а-яА-ЯёЁ\s-]+$/,
-    };
-    
-    if (text.length < rules.minLength) {
-        console.log(`[VALIDATION ERROR] Слишком короткий ввод: ${text.length} символов`);
-        return { valid: false, message: "❌ Минимум 2 символа." };
-    }
-    if (!rules.allowedChars.test(text)) {
-        console.log(`[VALIDATION ERROR] Недопустимые символы в: "${text}"`);
-        return { valid: false, message: "❌ Только кириллица, пробелы и дефисы." };
-    }
-    return { valid: true };
-}
-
-// Структура подразделений
-const departmentStructure = {
-    'dep_1': {
-        name: 'ЦА',
-        management: {
-            'man_1': { name: 'ДБРА', hasDepartments: false },
-            'man_2': { name: 'ДДПДФО', hasDepartments: false },
-            'man_t': { name: 'ДДПП', hasDepartments: false }
-        }
-    },
-    'dep_2': {
-        name: 'ТУ',
-        management: {
-            'man_3': { name: 'ГУ по ЦФО', hasDepartments: true },
-            'man_4': { name: 'УГУ', hasDepartments: true },
-            'man_7': { name: 'ЮГУ', hasDepartments: true }
-        }
-    },
-    'dep_3': {
-        name: 'Подразделения',
-        management: {
-            'man_5': { name: 'КОП', hasDepartments: false },
-            'man_6': { name: 'Автопредприятие', hasDepartments: false },
-            'man_t': { name: 'ММЦ', hasDepartments: false }
-        }
-    }
-};
-
-// Структура отделов
-const departments = {
-    'man_3': {
-        name: 'ГУ по ЦФО',
-        departments: {
-            'dep_1': 'Аппарат',
-            'dep_2': 'Отделение 1',
-            'dep_3': 'Отделение 2',
-            'dep_4': 'Отделение 3'
-        }
-    },
-    'man_4': {
-        name: 'УГУ',
-        departments: {
-            'dep_5': 'Аппарат',
-            'dep_6': 'Отделение 4',
-            'dep_7': 'Отделение 5',
-            'dep_8': 'Отделение 6'
-        }
-    },
-    'man_7': {
-        name: 'ЮГУ',
-        departments: {
-            'dep_9': 'Аппарат',
-            'dep_10': 'Отдел 7',
-            'dep_11': 'Отдел 8',
-            'dep_12': 'Отдел 9'
-        }
-    }
-};
 
 // ==================== ФУНКЦИЯ ПРОВЕРКИ ВВОДА ====================
 function validateUserInput(text) {
@@ -303,16 +226,34 @@ const registrationModule = {
                 user.selectedDepartment = depId;
                 user.step = 'select_management';
                 console.log(`[REGISTRATION STEP] Выбор управления для департамента: ${depId}`);
-                const managementButtons = Object.entries(departmentStructure[depId].management)
-                    .map(([key, value]) => {
-                        return [{ text: value.name, callback_data: `management_${key}` }];
-                    });
+
+                const managementEntries = Object.entries(departmentStructure[depId].management);
+                if (managementEntries.length === 0) {
+                    console.error('[MANAGEMENT ERROR] Нет доступных управлений для департамента:', depId);
+                    await bot.sendMessage(chatId, "⚠️ Нет доступных подразделений. Обратитесь к администратору.");
+                    return;
+                }
+
+                const managementButtons = managementEntries.map(([key, value]) => ({
+                    text: value.name,
+                    callback_data: `management_${key}`
+                }));
+
+                // Группируем кнопки парами
+                const groupedButtons2 = [];
+                for (let i = 0; i < managementButtons.length; i += 2) {
+                    const pair = [managementButtons[i]];
+                    if (i + 1 < managementButtons.length) {
+                        pair.push(managementButtons[i + 1]);
+                    }
+                    groupedButtons2.push(pair);
+                }
                 await bot.sendMessage(
                     chatId,
                     "Выберите подразделение:",
                     {
                         reply_markup: {
-                            inline_keyboard: managementButtons,
+                            inline_keyboard: groupedButtons2,
                             resize_keyboard: true
                         }
                     }
@@ -325,7 +266,7 @@ const registrationModule = {
                 const depId = user.selectedDepartment;
                 console.log(`[MANAGEMENT SELECT] Выбрано управление: ${fullManId} в департаменте: ${depId}`);
                 if (!departmentStructure[depId] || !departmentStructure[depId].management) {
-                    console.error('[MANAGEMENT ERROR] Не найдена структура для департамента:', depId);
+                    console.error('[MANAGEMENT ERROR] Не найдена структура для департамента/ТУ:', depId);
                     await bot.sendMessage(chatId, "⚠️ Ошибка при выборе подразделения. Попробуйте снова.");
                     return;
                 }
@@ -359,7 +300,7 @@ const registrationModule = {
                     });
                 await bot.sendMessage(
                     chatId,
-                    "Выберите отдел:",
+                    "Выберите подразделение:",
                     {
                         reply_markup: {
                             inline_keyboard: departmentButtons,
@@ -448,15 +389,25 @@ ${user.status === 'family' ? `Город: ${user.town || 'не указан'}` :
     handleSelectDepartment: async (chatId) => {
         try {
             console.log(`[DEPARTMENT SELECT] Начало выбора подразделения для chatId: ${chatId}`);
-            const buttons = Object.entries(departmentStructure).map(([key, value]) => {
-                return [{ text: value.name, callback_data: `department_${key}` }];
-            });
+            
+            // Создаем массив кнопок
+            const buttons = Object.entries(departmentStructure).map(([key, value]) => ({
+                text: value.name, 
+                callback_data: `department_${key}`
+            }));
+            
+            // Группируем кнопки парами без undefined
+            const groupedButtons = [];
+            for (let i = 0; i < buttons.length; i += 2) {
+                groupedButtons.push(buttons.slice(i, i + 2));
+            }
+            
             await bot.sendMessage(
                 chatId,
                 "Выберите подразделение:",
                 {
                     reply_markup: {
-                        inline_keyboard: buttons,
+                        inline_keyboard: groupedButtons,
                         resize_keyboard: true
                     }
                 }
